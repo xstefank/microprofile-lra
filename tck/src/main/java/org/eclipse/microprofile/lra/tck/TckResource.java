@@ -20,6 +20,7 @@
 package org.eclipse.microprofile.lra.tck;
 
 import org.eclipse.microprofile.lra.client.LRAClient;
+import org.eclipse.microprofile.lra.participant.LRAManagement;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -38,12 +39,15 @@ public class TckResource {
     private static final String VERBOSE = "verbose";
     @Inject
     private LRAClient lraClient;
+    
+    @Inject
+    private LRAManagement lraManagement;
 
     private TckTests test;
 
     @PostConstruct
     private void setup() {
-        TckTests.beforeClass(lraClient);
+        TckTests.beforeClass(lraClient, lraManagement);
         test = new TckTests();
     }
 

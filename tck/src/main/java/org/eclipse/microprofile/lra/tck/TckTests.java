@@ -19,11 +19,16 @@
  *******************************************************************************/
 package org.eclipse.microprofile.lra.tck;
 
+import org.eclipse.microprofile.lra.annotation.CompensatorStatus;
 import org.eclipse.microprofile.lra.client.GenericLRAException;
 import org.eclipse.microprofile.lra.client.LRAClient;
 import org.eclipse.microprofile.lra.client.LRAInfo;
+import org.eclipse.microprofile.lra.participant.JoinLRAException;
+import org.eclipse.microprofile.lra.participant.LRAManagement;
+import org.eclipse.microprofile.lra.tck.participant.model.TckLRAParticipant;
 import org.junit.After;
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -67,14 +72,16 @@ public class TckTests {
     private WebTarget recoveryTarget;
 
     private static List<LRAInfo> oldLRAs;
+    
+    private static LRAManagement lraManagement;
 
     private enum CompletionType {
         complete, compensate, mixed
     }
 
     @BeforeClass
-    public static void beforeClass(LRAClient lraClient) {
-        initTck(lraClient);
+    public static void beforeClass(LRAClient lraClient, LRAManagement lraManagement) {
+        initTck(lraClient, lraManagement);
     }
 
     public TckResult runTck(String testname, boolean verbose) {
@@ -99,14 +106,17 @@ public class TckTests {
         run.add("cancelOn", TckTests::cancelOn, verbose);
         run.add("cancelOnFamily", TckTests::cancelOnFamily, verbose);
         run.add("acceptTest", TckTests::acceptTest, verbose);
+        run.add("joinLRAViaManagementAPI", TckTests::joinLRAViaManagementAPI, verbose);
+        run.add("managementDelayedResult", TckTests::managementDelayedResult, verbose);
 
         run.runTests(this, testname);
 
         return run;
     }
 
-    private static void initTck(LRAClient lraClient) {
+    private static void initTck(LRAClient lraClient, LRAManagement lraManagement) {
         TckTests.lraClient = lraClient;
+        TckTests.lraManagement = lraManagement;
 
         try {
             if (Boolean.valueOf(System.getProperty("enablePause", "true"))) {
@@ -597,6 +607,62 @@ public class TckTests {
         int countAfter = lraClient.getActiveLRAs().size();
 
         assertEquals(countBefore, countAfter, "joinAndEnd: wrong LRA count", resourcePath);
+    }
+    
+    @Test
+    public String joinLRAViaManagementAPI() throws WebApplicationException {
+        int[] cnt1 = getManagementCloseCompensateCounts();
+        URL lraId = lraClient.startLRA(null, "SpecTest#joinLRAViaManagementAPI", LRA_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+
+        try {
+            lraManagement.joinLRA(new TckLRAParticipant.SuccessLRAParticipant(), lraId);
+        } catch (JoinLRAException e) {
+            throw new WebApplicationException(e);
+        }
+
+        lraClient.closeLRA(lraId);
+
+        int[] cnt2 = getManagementCloseCompensateCounts();
+
+        Assert.assertEquals("complete should have been called", cnt1[0] + 1, cnt2[0]);
+        Assert.assertEquals("compensate should not have been called", cnt1[1], cnt2[1]);
+        
+        return "passed";
+    }
+
+    @Test
+    public String managementDelayedResult() throws WebApplicationException {
+        int[] cnt1 = getManagementCloseCompensateCounts();
+        URL lraId = lraClient.startLRA(null, "SpecTest#managementDelayedResult", 0L, TimeUnit.MILLISECONDS);
+
+        try {
+            lraManagement.joinLRA(new TckLRAParticipant.DelayedLRAParticipant(), lraId);
+        } catch (JoinLRAException e) {
+            throw new WebApplicationException(e);
+        }
+        
+        lraClient.cancelLRA(lraId);
+
+        Assert.assertEquals("Invalid status returned after compensating LRA", CompensatorStatus.Compensating.name(), 
+                lraClient.getStatus(lraId).orElseThrow(() -> new WebApplicationException(
+                        "Invalid status")).name());
+
+        try {
+            Thread.sleep(TckLRAParticipant.DelayedLRAParticipant.DELAY);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+        int[] cnt2 = getManagementCloseCompensateCounts();
+
+        Assert.assertEquals("complete should have not been called", cnt1[0], cnt2[0]);
+        Assert.assertEquals("compensate should have been called", cnt1[1] + 1, cnt2[1]);
+
+        return "passed";
+    }
+
+    private int[] getManagementCloseCompensateCounts() {
+        return new int[]{TckLRAParticipant.COMPLETED_COUNT.get(), TckLRAParticipant.COMPENSATED_COUNT.get()};
     }
 
     private void renewTimeLimit() {
