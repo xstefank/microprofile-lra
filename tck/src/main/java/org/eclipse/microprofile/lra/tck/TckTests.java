@@ -24,7 +24,6 @@ import static org.eclipse.microprofile.lra.tck.participant.api.LraController.LRA
 import static org.eclipse.microprofile.lra.tck.participant.api.LraController.TRANSACTIONAL_WORK_PATH;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -109,7 +108,7 @@ public class TckTests {
      * the port of LRA recovery is defined by {@link #recoveryPort}.
      */
     @Inject @ConfigProperty(name = LRAClient.LRA_RECOVERY_PATH_KEY, defaultValue = "lra-recovery-coordinator")
-    private int recoveryPath;
+    private String recoveryPath;
 
     /**
      * Base URL of LRA suite is started at. It's URL where container exposes the test suite deployment.
@@ -304,8 +303,8 @@ public class TckTests {
     public void isActiveLRA() throws WebApplicationException {
         URL lra = lraClient.startLRA(null, lraClientId(), lraTimeout(), ChronoUnit.MILLIS);
 
-        assertEquals("LRA '" + lra + "' is not denoted as active even it was started",
-                LRAStatus.Active, lraManagement.getStatus(lra));
+        assertTrue("LRA '" + lra + "' is not denoted as active even it was started",
+                lraManagement.getStatus(lra).isActive());
 
         lraClient.closeLRA(lra);
     }
@@ -321,8 +320,8 @@ public class TckTests {
 
         lraClient.cancelLRA(lra);
 
-        assertEquals("LRA '" + lra + "' is not denoted as compensated even it was canceled",
-                LRAStatus.Cancelled, lraManagement.getStatus(lra));
+        assertTrue("LRA '" + lra + "' is not denoted as compensated even it was canceled",
+                lraManagement.getStatus(lra).isCompensated());
     }
 
     /**
@@ -336,8 +335,8 @@ public class TckTests {
 
         lraClient.closeLRA(lra);
 
-        assertEquals("LRA '" + lra + "' is not denoted as compensated even it was canceled",
-                LRAStatus.Closed, lraManagement.getStatus(lra));
+        assertTrue("LRA '" + lra + "' is not denoted as compensated even it was canceled",
+                lraManagement.getStatus(lra).isComplete());
     }
 
     /**
@@ -934,8 +933,8 @@ public class TckTests {
                 beforeCompensatedCount + 1, compensatedCount);
 
         try {
-            assertNotEquals("LRA '" + lra + "' should have been cancelled (called to " + resourcePath.getUri() + ")",
-                    LRAStatus.Active, lraManagement.getStatus(lra));
+            assertFalse("LRA '" + lra + "' should have been cancelled (called to " + resourcePath.getUri() + ")",
+                    lraManagement.getStatus(lra).isActive());
         } catch (NotFoundException ignore) {
             // means the LRA has gone
         }
